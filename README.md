@@ -1,25 +1,12 @@
-<<<<<<< HEAD
-# Invoice Reconciliation Platform
-
-A small AI-assisted service that reconciles invoices against bank payments —
-matching what it can, flagging what it can't, and explaining the results in
-plain English. Built as a take-home assignment; designed like a real service.
-
-**Stack:** Python · FastAPI · Pydantic · Faker · Pytest
-
----
-=======
 # AI-Assisted Invoice Reconciliation Platform
 
 A prototype invoice reconciliation service that automatically matches invoices
 against incoming bank payments, identifies exceptions requiring manual review,
 and produces a concise AI-assisted reconciliation summary.
->>>>>>> 86a150c142dfe5133633d3943141fdb5013b0b7e
 
 Built as a lightweight FastAPI service with a deterministic reconciliation
 engine and a dashboard powered entirely by the public API.
 
-<<<<<<< HEAD
 Given a set of invoices and a set of incoming bank payments (both intentionally
 messy — see [Assumptions](#assumptions--test-data)), it:
 
@@ -89,7 +76,6 @@ Run the test suite: `pytest tests/ -v`
 ---
 =======
 **Tech Stack**
->>>>>>> 86a150c142dfe5133633d3943141fdb5013b0b7e
 
 - Python 3
 - FastAPI
@@ -219,7 +205,6 @@ The root endpoint redirects to the dashboard.
 
 ```
 invoice-reconciliation/
-<<<<<<< HEAD
 ├── app/
 │   ├── models.py            # Dataclasses (engine) + Pydantic models (API contract)
 │   ├── data_generator.py    # Realistic dummy invoice/payment generation
@@ -406,7 +391,6 @@ Tests cover:
 ---
 
 # Complexity
->>>>>>> 86a150c142dfe5133633d3943141fdb5013b0b7e
 
 Current implementation performs reconciliation in approximately **O(n × m)**,
 which is acceptable for prototype-scale datasets.
@@ -449,4 +433,4 @@ reference and customer to reduce matching toward **O(n + m)**.
 # Screenshots
 <img width="1918" height="1042" alt="image" src="https://github.com/user-attachments/assets/d610c771-3f24-4cd2-b3ab-b6a62e7a9553" />
 <img width="1918" height="1093" alt="image" src="https://github.com/user-attachments/assets/8438e28f-7d38-4526-9f56-380c1a27065e" />
->>>>>>> 86a150c142dfe5133633d3943141fdb5013b0b7e
+
