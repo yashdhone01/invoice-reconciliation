@@ -5,6 +5,7 @@ Endpoints:
   GET /summary      -> required by the assignment. Reconciliation summary as JSON.
   GET /exceptions   -> bonus: line-item detail of everything needing manual review.
   GET /invoices     -> bonus: full reconciliation detail per invoice.
+  GET /dashboard    -> bonus: visual dashboard (charts + exceptions table).
   GET /health       -> basic liveness check.
 
 Data is loaded from CSV once at startup (data/invoices.csv, data/payments.csv).
@@ -18,6 +19,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse, HTMLResponse
 
 from app.ai_summary import generate_ai_summary
 from app.data_generator import generate_dataset, write_csv
@@ -100,6 +102,21 @@ def _load_csv_data():
 _invoices, _payments = _load_csv_data()
 _results, _orphan_payments = reconcile(_invoices, _payments, tolerance=DEFAULT_TOLERANCE)
 _summary = build_summary(_results, _orphan_payments)
+
+
+@app.get("/", include_in_schema=False)
+def root():
+    """Redirects to the dashboard so visiting the base URL shows something useful."""
+    return RedirectResponse(url="/dashboard")
+
+
+@app.get("/dashboard", response_class=HTMLResponse, include_in_schema=False)
+def dashboard():
+    """Serves a simple visual dashboard (charts + exceptions table) built on top of
+    the existing /summary and /exceptions endpoints. No separate backend logic —
+    it's a thin visualization layer over data the API already exposes."""
+    html_path = Path(__file__).resolve().parent / "static" / "dashboard.html"
+    return html_path.read_text()
 
 
 @app.get("/health")

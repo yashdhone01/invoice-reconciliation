@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>Invoice Reconciliation Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0f1115;
+    --card: #171a21;
+    --border: #262a33;
+    --text: #e6e8eb;
+    --muted: #9aa1ac;
+    --green: #34d399;
+    --yellow: #fbbf24;
+    --red: #f87171;
+    --blue: #60a5fa;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 32px;
+  }
+  h1 { font-size: 22px; margin: 0 0 4px 0; }
+  .subtitle { color: var(--muted); font-size: 14px; margin-bottom: 28px; }
+
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 14px;
+    margin-bottom: 28px;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+  }
+  .card .label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .card .value { font-size: 24px; font-weight: 600; margin-top: 6px; }
+  .card.matched .value { color: var(--green); }
+  .card.pending .value { color: var(--yellow); }
+  .card.flag .value { color: var(--red); }
+
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-bottom: 28px;
+  }
+  @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+
+  .panel {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px;
+  }
+  .panel h2 { font-size: 14px; margin: 0 0 14px 0; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+
+  #aiSummary {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--blue);
+    border-radius: 8px;
+    padding: 16px 18px;
+    font-size: 14px;
+    line-height: 1.6;
+    color: #d5d9e0;
+    margin-bottom: 28px;
+  }
+  #aiSummary .tag {
+    display: inline-block;
+    font-size: 11px;
+    color: var(--blue);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 8px;
+    font-weight: 600;
+  }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; }
+  tr:last-child td { border-bottom: none; }
+
+  .status-pill {
+    display: inline-block;
+    padding: 2px 9px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .status-Unmatched { background: rgba(248,113,113,0.15); color: var(--red); }
+  .status-Overpaid { background: rgba(251,191,36,0.15); color: var(--yellow); }
+  .status-Partially-Matched { background: rgba(251,191,36,0.15); color: var(--yellow); }
+  .status-Matched { background: rgba(52,211,153,0.15); color: var(--green); }
+
+  .loading { color: var(--muted); font-size: 14px; padding: 40px; text-align: center; }
+  .error { color: var(--red); font-size: 14px; padding: 20px; }
+</style>
+</head>
+<body>
+
+  <h1>Invoice Reconciliation Dashboard</h1>
+  <div class="subtitle">Live view of <code>/summary</code>, <code>/invoices</code> and <code>/exceptions</code></div>
+
+  <div id="loading" class="loading">Loading reconciliation data…</div>
+  <div id="content" style="display:none;">
+
+    <div class="cards" id="cards"></div>
+
+    <div id="aiSummary"><span class="tag">AI-generated summary</span><div id="aiSummaryText"></div></div>
+
+    <div class="grid">
+      <div class="panel">
+        <h2>Invoices by status</h2>
+        <canvas id="statusChart" height="220"></canvas>
+      </div>
+      <div class="panel">
+        <h2>Value: matched vs pending</h2>
+        <canvas id="valueChart" height="220"></canvas>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Exceptions requiring manual review</h2>
+      <table id="exceptionsTable">
+        <thead>
+          <tr>
+            <th>Invoice</th><th>Customer</th><th>Invoice Amt</th><th>Paid</th>
+            <th>Outstanding</th><th>Status</th><th>Notes</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+  </div>
+  <div id="errorBox" class="error" style="display:none;"></div>
+
+<script>
+// Keep global track of chart instances to safely destroy them before rendering new ones
+let statusChartInstance = null;
+let valueChartInstance = null;
+
+async function loadDashboard() {
+  try {
+    const [summaryRes, exceptionsRes] = await Promise.all([
+      fetch('/summary'),
+      fetch('/exceptions')
+    ]);
+    if (!summaryRes.ok || !exceptionsRes.ok) throw new Error('API returned an error status');
+
+    const summary = await summaryRes.json();
+    const exceptions = await exceptionsRes.json();
+
+    renderCards(summary);
+    renderAiSummary(summary);
+    renderStatusChart(summary);
+    renderValueChart(summary);
+    renderExceptionsTable(exceptions.items);
+
+    document.getElementById('loading').style.display = 'none';
+    document.getElementById('content').style.display = 'block';
+  } catch (err) {
+    document.getElementById('loading').style.display = 'none';
+    const box = document.getElementById('errorBox');
+    box.style.display = 'block';
+    box.textContent = 'Could not load dashboard data: ' + err.message + '. Make sure the API server is running.';
+  }
+}
+
+function fmt(n) {
+  return Number(n).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+}
+
+function renderCards(s) {
+  const cards = [
+    { label: 'Total Invoices', value: s.total_invoices, cls: '' },
+    { label: 'Matched', value: s.matched_invoices, cls: 'matched' },
+    { label: 'Unmatched', value: s.unmatched_invoices, cls: 'flag' },
+    { label: 'Partially Matched', value: s.partially_matched_invoices, cls: 'pending' },
+    { label: 'Overpaid', value: s.overpaid_invoices, cls: 'pending' },
+    { label: 'Duplicates Flagged', value: s.duplicate_payments_flagged, cls: 'flag' },
+    { label: 'Total Matched Value (\u20B9)', value: fmt(s.total_matched_value), cls: 'matched' },
+    { label: 'Total Pending Value (\u20B9)', value: fmt(s.total_pending_value), cls: 'pending' },
+  ];
+  document.getElementById('cards').innerHTML = cards.map(c => `
+    <div class="card ${c.cls}">
+      <div class="label">${c.label}</div>
+      <div class="value">${c.value}</div>
+    </div>
+  `).join('');
+}
+
+function renderAiSummary(s) {
+  document.getElementById('aiSummaryText').textContent = s.ai_summary || 'No summary available.';
+}
+
+function renderStatusChart(s) {
+  const ctx = document.getElementById('statusChart');
+  
+  // Safely destroy existing chart before creating a new one
+  if (statusChartInstance) {
+    statusChartInstance.destroy();
+  }
+
+  statusChartInstance = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: ['Matched', 'Partially Matched', 'Overpaid', 'Unmatched'],
+      datasets: [{
+        data: [s.matched_invoices, s.partially_matched_invoices, s.overpaid_invoices, s.unmatched_invoices],
+        backgroundColor: ['#34d399', '#fbbf24', '#60a5fa', '#f87171'],
+        borderRadius: 6,
+      }]
+    },
+    options: {
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#9aa1ac' }, grid: { color: '#262a33' } },
+        y: { ticks: { color: '#9aa1ac' }, grid: { color: '#262a33' }, beginAtZero: true }
+      }
+    }
+  });
+}
+
+function renderValueChart(s) {
+  const ctx = document.getElementById('valueChart');
+
+  // Safely destroy existing chart before creating a new one
+  if (valueChartInstance) {
+    valueChartInstance.destroy();
+  }
+
+  valueChartInstance = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: ['Matched Value', 'Pending Value'],
+      datasets: [{
+        data: [s.total_matched_value, s.total_pending_value],
+        backgroundColor: ['#34d399', '#fbbf24'],
+        borderWidth: 0,
+      }]
+    },
+    options: {
+      plugins: { legend: { position: 'bottom', labels: { color: '#e6e8eb' } } }
+    }
+  });
+}
+
+function renderExceptionsTable(items) {
+  const tbody = document.querySelector('#exceptionsTable tbody');
+  if (!items || !items.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="color:#9aa1ac;">No exceptions \u2014 everything reconciled cleanly.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = items.map(i => `
+    <tr>
+      <td>${i.invoice_id}<br><span style="color:#9aa1ac;font-size:11px;">${i.invoice_number}</span></td>
+      <td>${i.customer_name}</td>
+      <td>\u20B9${fmt(i.invoice_amount)}</td>
+      <td>\u20B9${fmt(i.paid_amount)}</td>
+      <td>\u20B9${fmt(i.outstanding_amount)}</td>
+      <td><span class="status-pill status-${i.status.replace(/ /g, '-')}">${i.status}</span></td>
+      <td style="color:#9aa1ac;">${i.notes}</td>
+    </tr>
+  `).join('');
+}
+
+// Initialize the dashboard
+loadDashboard();
+</script>
+</body>
+</html>
