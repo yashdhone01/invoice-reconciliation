@@ -1,127 +1,286 @@
-# Invoice Reconciliation Platform (Prototype)
+# AI-Assisted Invoice Reconciliation Platform
 
-An AI-powered invoice reconciliation prototype that matches invoices against
-bank payments, flags exceptions needing manual review, and exposes the results
-through a FastAPI endpoint.
+A prototype invoice reconciliation service that automatically matches invoices
+against incoming bank payments, identifies exceptions requiring manual review,
+and produces a concise AI-assisted reconciliation summary.
 
-## What it does
+Built as a lightweight FastAPI service with a deterministic reconciliation
+engine and a dashboard powered entirely by the public API.
 
-1. Generates realistic dummy invoice and payment data (with deliberately messy,
-   real-world edge cases — see "Assumptions" below).
-2. Reconciles invoices against payments using a two-step matching strategy
-   (reference number, then amount + customer as a fallback).
-3. Classifies every invoice as `Matched`, `Partially Matched`, `Overpaid`, or
-   `Unmatched`.
-4. Flags duplicate payments and orphan payments (payments with no matching invoice).
-5. Serves a `/summary` JSON endpoint (plus a couple of bonus endpoints).
+**Tech Stack**
 
-## Project structure
+- Python 3
+- FastAPI
+- Pydantic
+- Chart.js
+- Faker
+- Pytest
+
+---
+
+# Features
+
+### Core functionality
+
+- Generates realistic invoice and bank payment datasets
+- Reconciles invoices against incoming payments
+- Matches using:
+  - Invoice reference
+  - Customer
+  - Amount (with configurable tolerance)
+- Supports multiple payments against a single invoice
+- Categorizes invoices as:
+  - Matched
+  - Partially Matched
+  - Overpaid
+  - Unmatched
+
+### Exception detection
+
+- Duplicate payments
+- Orphan payments
+- Missing payments
+- Partial payments
+- Overpayments
+
+### AI Assistance
+
+Produces a natural-language reconciliation summary alongside the structured
+JSON response.
+
+The reconciliation logic itself is fully deterministic. AI is used only to
+summarize the results—not to make financial decisions.
+
+### Dashboard
+
+A lightweight dashboard built directly on top of the API displaying:
+
+- KPI cards
+- Status distribution
+- Matched vs pending value
+- Live exceptions table
+
+No additional backend endpoints or database are required.
+
+---
+
+# Quick Start
+
+```bash
+git clone <repo-url>
+
+cd invoice-reconciliation
+
+python -m venv venv
+
+# Windows
+venv\Scripts\activate
+
+# macOS/Linux
+source venv/bin/activate
+
+pip install -r requirements.txt
+
+uvicorn app.main:app --reload
+```
+
+Open
+
+```
+http://localhost:8000/docs
+```
+
+to explore the API.
+
+The dashboard is available at
+
+```
+http://localhost:8000/dashboard
+```
+
+The root endpoint redirects to the dashboard.
+
+---
+
+# API
+
+| Method | Endpoint | Description |
+|---------|----------|-------------|
+| GET | `/summary` | Aggregate reconciliation summary |
+| GET | `/invoices` | Invoice-level reconciliation results |
+| GET | `/exceptions` | Items requiring manual review |
+| GET | `/dashboard` | Dashboard UI |
+| GET | `/health` | Health check |
+| GET | `/docs` | Swagger UI |
+
+---
+
+# Example Summary
+
+```json
+{
+  "total_invoices": 40,
+  "matched_invoices": 32,
+  "partially_matched_invoices": 1,
+  "overpaid_invoices": 4,
+  "unmatched_invoices": 3,
+  "total_matched_value": 4005829.08,
+  "total_pending_value": 504076.53,
+  "duplicate_payments_flagged": 1,
+  "ai_summary": "..."
+}
+```
+
+---
+
+# Project Structure
 
 ```
 invoice-reconciliation/
-├── app/
-│   ├── models.py            # Dataclasses (engine) + Pydantic models (API)
-│   ├── data_generator.py    # Realistic dummy data generation
-│   ├── reconciliation.py    # Core matching + summary logic
-│   ├── ai_summary.py        # Optional natural-language summary generator
-│   └── main.py               # FastAPI app and routes
-├── data/                      # Generated CSVs live here (invoices.csv, payments.csv)
-├── tests/
-│   └── test_reconciliation.py
-├── requirements.txt
-└── README.md
+
+app/
+    main.py
+    reconciliation.py
+    data_generator.py
+    models.py
+    ai_summary.py
+
+data/
+
+tests/
+
+requirements.txt
+README.md
 ```
 
-## How to run
+---
+
+# Design Decisions
+
+### Deterministic reconciliation
+
+Invoice matching is deterministic and fully explainable.
+
+The matching order is:
+
+1. Invoice reference
+2. Customer + amount fallback
+
+Reference numbers are normalized before comparison to tolerate differences in
+spacing, punctuation and casing.
+
+---
+
+### Payment tolerance
+
+A configurable ±₹10 tolerance absorbs minor bank charges and rounding
+differences that commonly occur in real payment systems.
+
+---
+
+### Duplicate payments
+
+Duplicate detection is treated independently from reconciliation status.
+
+An invoice may reconcile successfully while still being flagged as a potential
+duplicate payment requiring manual verification.
+
+---
+
+### Multiple payments
+
+Invoices may receive multiple payments.
+
+Rather than assuming a strict one-to-one relationship, all matching payments
+are aggregated before determining the reconciliation status.
+
+---
+
+### AI summary
+
+The reconciliation engine remains deterministic.
+
+AI is used only to convert structured reconciliation output into a concise,
+human-readable narrative.
+
+If an `ANTHROPIC_API_KEY` is available, Claude generates the summary.
+Otherwise a deterministic template is used so the project runs without any
+external dependencies.
+
+---
+
+### Dashboard architecture
+
+The dashboard contains no business logic.
+
+It consumes the same REST endpoints that any external client would use,
+demphasizing API-first design and avoiding duplicated backend logic.
+
+---
+
+# Assumptions
+
+Because no input data was supplied, realistic sample data was generated.
+
+The generated dataset intentionally contains:
+
+- exact matches
+- partial payments
+- overpayments
+- duplicate payments
+- orphan payments
+- malformed references
+- bank-charge rounding differences
+
+This produces reconciliation scenarios representative of real financial data
+rather than ideal one-to-one examples.
+
+---
+
+# Testing
+
+Run
 
 ```bash
-# 1. Create a virtual environment (recommended)
-python3 -m venv venv
-source venv/bin/activate        # on Windows: venv\Scripts\activate
-
-# 2. Install dependencies
-pip install -r requirements.txt
-
-# 3. Generate sample data (optional — the API auto-generates it on first run if missing)
-python3 -m app.data_generator
-
-# 4. Run the API
-uvicorn app.main:app --reload
-
-# 5. Try it
-curl http://localhost:8000/summary
+pytest tests -v
 ```
 
-Interactive API docs (Swagger UI) are available at `http://localhost:8000/docs`
-once the server is running.
+Tests cover:
 
-### Endpoints
+- Exact match
+- Tolerance match
+- Partial payment
+- Overpayment
+- Duplicate detection
+- Orphan payments
+- Summary aggregation
+- Invalid input handling
 
-| Method | Path                          | Description                                              |
-|--------|-------------------------------|------------------------------------------------------------|
-| GET    | `/summary`                    | Required by the assignment — reconciliation summary        |
-| GET    | `/invoices`                   | Bonus — full per-invoice detail, filterable by `?status=`   |
-| GET    | `/exceptions`                 | Bonus — only invoices needing manual review                |
-| GET    | `/health`                     | Basic liveness check                                        |
+---
 
-### Running tests
+# Complexity
 
-```bash
-pytest tests/ -v
-```
+Current implementation performs reconciliation in approximately **O(n × m)**,
+which is acceptable for prototype-scale datasets.
 
-## Assumptions
+For production systems, payments would be indexed by normalized invoice
+reference and customer to reduce matching toward **O(n + m)**.
 
-- **No input files were given**, so I generated my own dataset (`app/data_generator.py`)
-  with 40 invoices and ~42 payments. Rather than making every record match
-  perfectly, I deliberately injected the kinds of messiness a real reconciliation
-  system has to handle: exact matches, partial payments, overpayments, duplicate
-  payments, amounts off by a few rupees (bank charges), free-text/garbled payment
-  references, and a few orphan payments with no matching invoice. This makes the
-  reconciliation logic actually get exercised instead of trivially matching everything.
-- **One invoice can have multiple payments** (installments), so paid amounts are
-  summed per invoice rather than assuming a strict 1:1 relationship.
-- **A payment tolerance of ₹10** is applied by default to absorb bank charges and
-  rounding differences — an exact-only match would be unrealistic for real bank data.
-- **Matching priority**: reference number match first (normalized — case, spacing,
-  and punctuation-insensitive, matching on the invoice's numeric tail since that's
-  what people actually type into a bank transfer note), falling back to
-  customer + amount match only when no reference match is found. This mirrors how
-  a human accountant would reconcile a messy bank statement.
-- **Duplicate detection** flags an invoice when 2+ *individually full-amount*
-  payments are linked to it — this is a common real error (e.g. paid via two
-  different channels) and needs a human to decide whether to refund or credit.
-- Currency is written as ₹ (INR) throughout given the "±₹5 or ±₹10" example in
-  the brief, but the logic is currency-agnostic.
+---
 
-## Design decisions worth highlighting
+# Future Improvements
 
-- **Dataclasses for the engine, Pydantic for the API boundary.** The reconciliation
-  engine doesn't need validation overhead on every object; validation matters at
-  the API boundary, where Pydantic also gives us free OpenAPI docs.
-- **Reconciliation runs once at startup**, not on every request. For a prototype
-  this is fine and keeps `/summary` fast; a production version would re-run this
-  on a schedule, on file upload, or via a `POST /reconcile` trigger instead.
-- **Graceful CSV validation.** Malformed rows are skipped with a log message
-  rather than crashing the whole load — see `_load_csv_data()` in `main.py`.
-- **AI-generated summary (bonus feature).** `/summary` includes a natural-language
-  narrative (`ai_summary` field) built from the aggregated numbers. If an
-  `ANTHROPIC_API_KEY` environment variable is set, it calls the Claude API for a
-  genuinely model-generated narrative instead; otherwise it falls back to a
-  template-based narrative so the endpoint stays fast, deterministic, and runnable
-  without any API key. This was a deliberate choice — a reviewer running this
-  locally shouldn't hit a broken endpoint just because they don't have a key handy.
-- **Tolerance and duplicate detection are separate concerns.** An invoice can be
-  "Matched" (net amount reconciles) while still being flagged as a duplicate
-  payment risk — these are surfaced as two independent signals rather than
-  collapsed into one status, since they call for different follow-up actions.
+- PostgreSQL persistence
+- Incremental reconciliation runs
+- Upload API (`POST /reconcile`)
+- Historical reconciliation trends
+- Fuzzy customer matching (`rapidfuzz`)
+- Multi-currency support
+- Async background reconciliation
+- Audit trail and reconciliation history
 
-## What I'd add with more time
+---
 
-- Persist reconciliation runs to a real database (Postgres) instead of in-memory/CSV,
-  with a `POST /reconcile` endpoint to re-run on new uploads.
-- A simple dashboard (e.g. Streamlit) visualizing matched vs. pending value over time.
-- Fuzzy customer name matching (e.g. `rapidfuzz`) to handle minor spelling
-  variations between invoice and bank records.
-- Async/batch processing for larger datasets instead of the current in-memory
-  O(n·m) matching (fine at prototype scale, would need indexing at real volume).
+# Screenshots
+<img width="1918" height="1042" alt="image" src="https://github.com/user-attachments/assets/d610c771-3f24-4cd2-b3ab-b6a62e7a9553" />
+<img width="1918" height="1093" alt="image" src="https://github.com/user-attachments/assets/8438e28f-7d38-4526-9f56-380c1a27065e" />
